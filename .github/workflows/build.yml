@@ -31,32 +31,41 @@ jobs:
         python -m pip install --upgrade pip
         pip install build wheel setuptools
 
-    - name: Get version from pyproject.toml or setup.py
+    - name: Get version from setup.py
       id: get_version
       shell: python
       run: |
         import os
         import re
+        import ast
 
-        # Try to get version from pyproject.toml
-        try:
-            with open('pyproject.toml', 'r') as f:
-                content = f.read()
-                version_match = re.search(r'version\s*=\s*[\'"]([^\'"]*)[\'"]', content)
-                if version_match:
-                    version = version_match.group(1)
-                    print(f"Version from pyproject.toml: {version}")
-        except FileNotFoundError:
-            # If pyproject.toml not found, try setup.py
+        def extract_version_from_setuppy():
             try:
                 with open('setup.py', 'r') as f:
-                    content = f.read()
-                    version_match = re.search(r'version\s*=\s*[\'"]([^\'"]*)[\'"]', content)
+                    file_contents = f.read()
+                    
+                    # Try to find version in setup() call
+                    version_match = re.search(r'version\s*=\s*[\'"]([^\'"]*)[\'"]', file_contents)
                     if version_match:
-                        version = version_match.group(1)
-                        print(f"Version from setup.py: {version}")
-            except FileNotFoundError:
-                version = '0.0.0'  # Fallback version
+                        return version_match.group(1)
+                    
+                    # Try to parse the AST to find version assignment
+                    tree = ast.parse(file_contents)
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Assign):
+                            for target in node.targets:
+                                if isinstance(target, ast.Name) and target.id == 'version':
+                                    if isinstance(node.value, ast.Str):
+                                        return node.value.s
+                                    elif isinstance(node.value, ast.Constant):
+                                        return node.value.value
+            except Exception as e:
+                print(f"Error extracting version: {e}")
+            
+            return '0.0.0'
+
+        version = extract_version_from_setuppy()
+        print(f"Extracted version: {version}")
 
         # Set output for GitHub Actions
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
