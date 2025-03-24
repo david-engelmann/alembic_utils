@@ -30,6 +30,8 @@ setup(
     author_email="oliver@oliverrice.com",
     license="MIT",
     description="A sqlalchemy/alembic extension for migrating procedures and views ",
+    long_description="Help on the way!",
+    long_description_content_type="text/markdown",
     python_requires=">=3.7",
     packages=find_packages("src"),
     package_dir={"": "src"},
