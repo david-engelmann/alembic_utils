@@ -1,0 +1,102 @@
+name: Build and Release Wheels
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+
+jobs:
+  build_wheels:
+    name: Build wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build wheel setuptools
+
+    - name: Get version from pyproject.toml or setup.py
+      id: get_version
+      shell: python
+      run: |
+        import os
+        import re
+
+        # Try to get version from pyproject.toml
+        try:
+            with open('pyproject.toml', 'r') as f:
+                content = f.read()
+                version_match = re.search(r'version\s*=\s*[\'"]([^\'"]*)[\'"]', content)
+                if version_match:
+                    version = version_match.group(1)
+                    print(f"Version from pyproject.toml: {version}")
+        except FileNotFoundError:
+            # If pyproject.toml not found, try setup.py
+            try:
+                with open('setup.py', 'r') as f:
+                    content = f.read()
+                    version_match = re.search(r'version\s*=\s*[\'"]([^\'"]*)[\'"]', content)
+                    if version_match:
+                        version = version_match.group(1)
+                        print(f"Version from setup.py: {version}")
+            except FileNotFoundError:
+                version = '0.0.0'  # Fallback version
+
+        # Set output for GitHub Actions
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"version={version}\n")
+
+    - name: Build wheels
+      run: |
+        python -m build --wheel
+
+    - name: Upload wheels as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+        path: dist/*.whl
+
+  release:
+    name: Create GitHub Release
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all wheels
+      uses: actions/download-artifact@v4
+      with:
+        path: dist
+        pattern: wheels-*
+        merge-multiple: true
+
+    - name: List downloaded wheels
+      run: ls -la dist/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: "Release v${{ needs.build_wheels.outputs.version }}"
+        tag_name: "v${{ needs.build_wheels.outputs.version }}"
+        files: dist/*.whl
+        generate_release_notes: true
+        draft: false
+        make_latest: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
